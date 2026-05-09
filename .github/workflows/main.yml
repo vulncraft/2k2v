@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: DeterminateSystems/nix-installer-action@main
+      - run: nix develop --command just lint
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install latest nextest release
+        uses: taiki-e/install-action@nextest
+      - name: Test with latest nextest release
+        uses: actions-rs/cargo@v1
+        with:
+          command: nextest
+          args: run
