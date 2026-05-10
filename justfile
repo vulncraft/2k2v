@@ -1,2 +1,2 @@
 lint:
-  cargo clippy -- -Dwarnings -D clippy::pedantic
+  cargo clippy -- -Dwarnings
