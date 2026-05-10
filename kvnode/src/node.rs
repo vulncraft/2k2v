@@ -15,8 +15,11 @@ use axum::{
 };
 use serde::Serialize;
 use thiserror::Error;
+use tokio::sync::{mpsc, oneshot};
 use tower_http::trace::TraceLayer;
 use tracing::{info, instrument};
+
+use crate::actor::{self, StoreCommand};
 
 #[derive(Error, Debug, Serialize)]
 pub enum NodeError {
@@ -30,26 +33,26 @@ struct StoredValue {
     value: Option<String>,
 }
 
-pub struct Node {}
+pub struct NodeHttp {
+    pub store_tx: mpsc::Sender<actor::StoreCommand>,
+}
 
-impl Node {
-    fn router() -> Router {
-        let shared_state = Arc::new(Mutex::new(HashMap::new()));
-        shared_state
-            .lock()
-            .unwrap()
-            .insert("test".into(), "value".into());
+impl NodeHttp {
+    fn router(self) -> Router {
         Router::new()
-            .route("/key/{key}", get(Node::handle_get_val))
-            .route("/key/{key}", put(Node::handle_put_val))
-            .route("/key/{key}", delete(Node::handle_del_val))
-            .with_state(shared_state)
+            .route("/key/{key}", get(NodeHttp::handle_get_val))
+            .route("/key/{key}", put(NodeHttp::handle_put_val))
+            .route("/key/{key}", delete(NodeHttp::handle_del_val))
+            .with_state(self.store_tx)
             .layer(TraceLayer::new_for_http())
     }
 
     // Run the node
     pub async fn run(self) {
-        let app = Node::router();
+        let node = NodeHttp {
+            store_tx: self.store_tx,
+        };
+        let app = node.router();
         let listener = tokio::net::TcpListener::bind("0.0.0.0:3000")
             .await
             .expect("Failed to bind port");
@@ -57,26 +60,28 @@ impl Node {
     }
 
     async fn handle_del_val(
-        State(state): State<Arc<Mutex<HashMap<String, String>>>>,
+        State(tx): State<mpsc::Sender<StoreCommand>>,
         Path(key): Path<String>,
     ) -> StatusCode {
-        state.lock().unwrap().remove(&key);
-        info!(message = "Deleted key", key = key);
+        info!(message = "Deleted key", key = &key);
+        let _ = tx.clone().send(StoreCommand::Delete { key }).await;
         StatusCode::OK
     }
 
     async fn handle_put_val(
-        State(state): State<Arc<Mutex<HashMap<String, String>>>>,
+        State(tx): State<mpsc::Sender<StoreCommand>>,
         Path(key): Path<String>,
         Query(params): Query<HashMap<String, String>>,
     ) -> (StatusCode) {
         if let Some(val) = params.get("value") {
-            state
-                .lock()
-                .unwrap()
-                .entry(key.clone())
-                .insert_entry(val.into());
-            info!(message = "Updated key", key = key, new_value = val);
+            info!(message = "Updated key", key = &key, new_value = val);
+            let _ = tx
+                .clone()
+                .send(StoreCommand::Put {
+                    key,
+                    value: val.clone(),
+                })
+                .await;
         } else {
             return StatusCode::BAD_REQUEST;
         }
@@ -85,16 +90,24 @@ impl Node {
 
     // Get a value from the KV store
     async fn handle_get_val(
-        State(state): State<Arc<Mutex<HashMap<String, String>>>>,
+        State(tx): State<mpsc::Sender<StoreCommand>>,
         Path(key): Path<String>,
     ) -> (StatusCode, Json<StoredValue>) {
         info!(message = "get key", key = key);
-        if let Some(val) = state.lock().unwrap().get(&key) {
+
+        let (itx, irx) = oneshot::channel();
+        let _ = tx
+            .send(StoreCommand::Get {
+                key: key.clone(),
+                reply: itx,
+            })
+            .await;
+        if let Some(val) = irx.await.unwrap() {
             (
                 StatusCode::OK,
                 Json(StoredValue {
                     key,
-                    value: Some(val.clone()),
+                    value: Some(val),
                 }),
             )
         } else {
@@ -108,13 +121,18 @@ impl Node {
 
 #[cfg(test)]
 mod test {
+    use crate::actor::node_actor;
+
     use super::*;
 
     use axum_test::TestServer;
     use serde_json::json;
     #[tokio::test]
     async fn test_ops() {
-        let router = Node::router();
+        let (tx, rx) = mpsc::channel::<StoreCommand>(32);
+        tokio::spawn(node_actor(rx));
+        let node = NodeHttp { store_tx: tx };
+        let router = node.router();
         let server = TestServer::new(router);
         let response = server
             .get("/key/unknown_key")
