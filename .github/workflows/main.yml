@@ -3,14 +3,21 @@ name: CI
 on:
   push:
   pull_request:
-
-jobs:
-  lint:
+env:
+  RUSTFLAGS: "-Dwarnings"
+build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: DeterminateSystems/nix-installer-action@main
-      - run: nix develop --command just lint
+      - run: nix build .#docker
+jobs:
+  clippy_check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Run Clippy
+        run: cargo clippy --all-targets --all-features
   test:
     runs-on: ubuntu-latest
     steps:
