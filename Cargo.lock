@@ -1040,6 +1040,7 @@ dependencies = [
  "anyhow",
  "axum",
  "axum-test",
+ "clap",
  "quickcheck",
  "quickcheck_macros",
  "serde",
