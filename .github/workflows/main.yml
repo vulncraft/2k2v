@@ -4,7 +4,19 @@ on:
   push:
   pull_request:
 
+
 jobs:
+  cog_check_job:
+    runs-on: ubuntu-latest
+    name: check conventional commit compliance
+    steps:
+      - uses: actions/checkout@main
+        with:
+          fetch-depth: 0
+      - name: Conventional commits check
+        uses: cocogitto/cocogitto-action@v4.2.0
+        with:
+          command: check
   lint:
     runs-on: ubuntu-latest
     steps:
