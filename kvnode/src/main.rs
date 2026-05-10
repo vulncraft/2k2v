@@ -4,8 +4,7 @@ use kvnode::{
     actor::{StoreCommand, node_actor},
     node::NodeHttp,
 };
-use tracing::{Level, event, info, span};
-use tracing_subscriber::EnvFilter;
+use tracing::info;
 
 #[tokio::main]
 async fn main() {

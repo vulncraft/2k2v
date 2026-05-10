@@ -13,7 +13,7 @@ use axum::{
     response::IntoResponse,
     routing::{delete, get, post, put},
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::sync::{mpsc, oneshot};
 use tower_http::trace::TraceLayer;
@@ -41,7 +41,7 @@ impl NodeHttp {
     fn router(self) -> Router {
         Router::new()
             .route("/key/{key}", get(NodeHttp::handle_get_val))
-            .route("/key/{key}", put(NodeHttp::handle_put_val))
+            .route("/key", put(NodeHttp::handle_put_val))
             .route("/key/{key}", delete(NodeHttp::handle_del_val))
             .with_state(self.store_tx)
             .layer(TraceLayer::new_for_http())
@@ -49,10 +49,7 @@ impl NodeHttp {
 
     // Run the node
     pub async fn run(self) {
-        let node = NodeHttp {
-            store_tx: self.store_tx,
-        };
-        let app = node.router();
+        let app = self.router();
         let listener = tokio::net::TcpListener::bind("0.0.0.0:3000")
             .await
             .expect("Failed to bind port");
@@ -70,21 +67,17 @@ impl NodeHttp {
 
     async fn handle_put_val(
         State(tx): State<mpsc::Sender<StoreCommand>>,
-        Path(key): Path<String>,
-        Query(params): Query<HashMap<String, String>>,
+        Json(body): Json<actor::PutRequest>,
     ) -> (StatusCode) {
-        if let Some(val) = params.get("value") {
-            info!(message = "Updated key", key = &key, new_value = val);
-            let _ = tx
-                .clone()
-                .send(StoreCommand::Put {
-                    key,
-                    value: val.clone(),
-                })
-                .await;
-        } else {
-            return StatusCode::BAD_REQUEST;
-        }
+        // info!(message = "Updated key", key = &key, new_value = val);
+        let _ = tx
+            .clone()
+            .send(StoreCommand::Put(actor::PutRequest {
+                key: body.key,
+                value: body.value,
+            }))
+            .await;
+
         (StatusCode::OK)
     }
 
@@ -139,7 +132,8 @@ mod test {
             .await
             .assert_status(StatusCode::NOT_FOUND);
         let response = server
-            .put("/key/new_key?value=new_value")
+            .put("/key")
+            .json(&json!({"key": "new_key", "value": "new_value"}))
             .await
             .assert_status(StatusCode::OK);
         let response = server

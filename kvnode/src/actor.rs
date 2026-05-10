@@ -1,3 +1,5 @@
+use serde::Deserialize;
+use serde::Serialize;
 use tokio::sync::mpsc;
 
 use tokio::sync::oneshot;
@@ -5,15 +7,18 @@ use tokio::sync::oneshot;
 use crate::storage::KVStore;
 use crate::storage::StorageInterface;
 
+#[derive(Serialize, Deserialize)]
+pub struct PutRequest {
+    pub key: String,
+    pub value: String,
+}
+
 pub enum StoreCommand {
     Get {
         key: String,
         reply: oneshot::Sender<Option<String>>,
     },
-    Put {
-        key: String,
-        value: String,
-    },
+    Put(PutRequest),
     Delete {
         key: String,
     },
@@ -27,7 +32,7 @@ pub async fn node_actor(mut rx: mpsc::Receiver<StoreCommand>) {
             StoreCommand::Get { key, reply } => {
                 let _ = reply.send(store.get(&key));
             }
-            StoreCommand::Put { key, value } => {
+            StoreCommand::Put(PutRequest { key, value }) => {
                 store.put(&key, &value);
             }
             StoreCommand::Delete { key } => {
@@ -64,10 +69,10 @@ mod tests {
         // insert key
         let _ = tx
             .clone()
-            .send(StoreCommand::Put {
+            .send(StoreCommand::Put(PutRequest {
                 key: "key".into(),
                 value: "new_value".into(),
-            })
+            }))
             .await;
 
         // Check key exists

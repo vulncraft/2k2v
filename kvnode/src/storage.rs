@@ -1,7 +1,4 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::collections::HashMap;
 
 use tracing::{info, instrument};
 
@@ -31,7 +28,7 @@ impl StorageInterface for KVStore {
 
     #[instrument(skip(self))]
     fn put(&mut self, key: &Self::K, value: &Self::V) {
-        self.data.entry(key.clone()).or_insert(value.clone());
+        self.data.insert(key.clone(), value.clone());
         info!("PUT entry");
     }
 
@@ -60,5 +57,14 @@ mod tests {
         store.put(&xs, &ys);
         store.delete(&xs);
         store.get(&xs).is_none()
+    }
+
+    #[quickcheck]
+    fn put_overwrites(xs: String, ys: String, zs: String) -> bool {
+        let mut store = KVStore::default();
+        store.put(&xs, &ys);
+        assert_eq!(store.get(&xs), Some(ys));
+        store.put(&xs, &zs);
+        store.get(&xs) == Some(zs)
     }
 }
