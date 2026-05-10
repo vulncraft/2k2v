@@ -3,55 +3,52 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-    flake-utils.url = "github:numtide/flake-utils";
-
-    fenix = {
-      url = "github:nix-community/fenix";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-
     crane.url = "github:ipetkov/crane";
+    flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { self, nixpkgs, flake-utils, fenix, crane }:
+  outputs = { self, nixpkgs, crane, flake-utils, ... }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
 
-        toolchain = fenix.packages.${system}.fromToolchainFile {
-          file = ./rust-toolchain.toml;
-          sha256 = "sha256-gh/xTkxKHL4eiRXzWv8KP7vfjSk61Iq48x47BEDFgfk=";
-        };
+        # musl toolchain for a fully static binary
+        muslTarget = pkgs.pkgsCross.musl64;
+        craneLib = (crane.mkLib muslTarget);
 
-        craneLib = (crane.mkLib pkgs).overrideToolchain toolchain;
-
-        myPackage = craneLib.buildPackage {
+        commonArgs = {
           src = craneLib.cleanCargoSource ./.;
           strictDeps = true;
+
+          CARGO_BUILD_TARGET = "x86_64-unknown-linux-musl";
+          CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static";
         };
 
-        myTests = craneLib.cargoNextest {
-          src = craneLib.cleanCargoSource ./.;
-          strictDeps = true;
-          cargoArtifacts = craneLib.buildDepsOnly {
-            src = craneLib.cleanCargoSource ./.;
+        my-crate = craneLib.buildPackage (commonArgs // {
+          cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+        });
+
+        docker-image = pkgs.dockerTools.buildLayeredImage {
+          name = "kvnode";
+          tag = "latest";
+
+          # fakeNss provides /etc/passwd and /etc/group so getpwuid() doesn't panic
+          contents = [ pkgs.dockerTools.fakeNss pkgs.tini ];
+
+          config = {
+            Entrypoint = [ "${pkgs.tini}/bin/tini" "--" "${my-crate}/bin/kvnode" ];
+            User = "nobody";
           };
         };
-      in {
-        packages.default = myPackage;
+      in
+      {
+        packages.default = my-crate;
+        packages.docker = docker-image;
 
-        checks = {
-          inherit myPackage;
-          tests = myTests;
-        };
+        apps.default = flake-utils.lib.mkApp { drv = my-crate; };
 
         devShells.default = craneLib.devShell {
-          packages = with pkgs; [
-            just
-            rust-analyzer
-            cargo-watch
-            cargo-nextest
-          ];
+          checks = self.checks.${system};
         };
       });
 }
