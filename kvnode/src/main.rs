@@ -14,7 +14,7 @@ struct Args {
     address: Option<String>,
 
     #[arg(short, long)]
-    port: Option<u32>,
+    port: Option<u16>,
 }
 
 #[tokio::main]
