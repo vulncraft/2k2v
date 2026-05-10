@@ -35,22 +35,23 @@ struct StoredValue {
 
 pub struct NodeHttp {
     pub store_tx: mpsc::Sender<actor::StoreCommand>,
+    pub bind_address: String,
 }
 
 impl NodeHttp {
-    fn router(self) -> Router {
+    fn router(&self) -> Router {
         Router::new()
             .route("/key/{key}", get(NodeHttp::handle_get_val))
             .route("/key", put(NodeHttp::handle_put_val))
             .route("/key/{key}", delete(NodeHttp::handle_del_val))
-            .with_state(self.store_tx)
+            .with_state(self.store_tx.clone())
             .layer(TraceLayer::new_for_http())
     }
 
     // Run the node
-    pub async fn run(self) {
+    pub async fn run(&self) {
         let app = self.router();
-        let listener = tokio::net::TcpListener::bind("0.0.0.0:3000")
+        let listener = tokio::net::TcpListener::bind(&self.bind_address)
             .await
             .expect("Failed to bind port");
         axum::serve(listener, app).await;
@@ -123,7 +124,10 @@ mod test {
     async fn test_ops() {
         let (tx, rx) = mpsc::channel::<StoreCommand>(32);
         tokio::spawn(node_actor(rx));
-        let node = NodeHttp { store_tx: tx };
+        let node = NodeHttp {
+            store_tx: tx,
+            bind_address: "localhost:3000".into(),
+        };
         let router = node.router();
         let server = TestServer::new(router);
         let response = server
