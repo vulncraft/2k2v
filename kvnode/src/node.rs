@@ -61,7 +61,7 @@ impl NodeHttp {
         Path(key): Path<String>,
     ) -> StatusCode {
         info!(message = "Deleted key", key = &key);
-        let _ = tx.clone().send(StoreCommand::Delete { key }).await;
+        let _ = tx.send(StoreCommand::Delete { key }).await;
         StatusCode::OK
     }
 
@@ -71,7 +71,6 @@ impl NodeHttp {
     ) -> (StatusCode) {
         // info!(message = "Updated key", key = &key, new_value = val);
         let _ = tx
-            .clone()
             .send(StoreCommand::Put(actor::PutRequest {
                 key: body.key,
                 value: body.value,

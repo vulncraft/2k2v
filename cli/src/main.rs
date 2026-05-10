@@ -47,13 +47,11 @@ async fn main() {
 }
 
 async fn do_get(host: String, key: String) {
-    println!("getting");
     let url = format!("{}/key/{}", host, key);
     let response = reqwest::get(url).await.unwrap().text().await;
     println!("{:#?}", response);
 }
 async fn do_put(host: String, key: String, value: String) {
-    println!("putting");
     let client = reqwest::Client::new();
     let url = format!("{}/key", host);
     let body = PutRequest { key, value };

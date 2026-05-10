@@ -15,6 +15,5 @@ async fn main() {
     tokio::spawn(node_actor(rx));
     let node = NodeHttp { store_tx: tx };
 
-    println!("Hello, world!");
     node.run().await;
 }

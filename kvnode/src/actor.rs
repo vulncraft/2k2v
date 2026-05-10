@@ -49,12 +49,7 @@ mod tests {
     async fn get_key(tx: &mpsc::Sender<StoreCommand>, key: String) -> Option<String> {
         // Check key not exist
         let (itx, irx) = oneshot::channel();
-        let _ = tx
-            .send(StoreCommand::Get {
-                key: "key".into(),
-                reply: itx,
-            })
-            .await;
+        let _ = tx.send(StoreCommand::Get { key, reply: itx }).await;
         irx.await.unwrap()
     }
 
