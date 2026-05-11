@@ -42,6 +42,7 @@ jobs:
         if: always()
         with:
           files: system_test/reports/*.xml
+          check_name: System Test
 
 
   clippy_check:
@@ -66,3 +67,4 @@ jobs:
         if: always()
         with:
           files: target/nextest/ci/junit.xml
+          check_name: Unit test
