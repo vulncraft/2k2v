@@ -5,20 +5,54 @@ on:
   pull_request:
 env:
   RUSTFLAGS: "-Dwarnings"
+permissions:
+  checks: write
+  contents: read
+  pull-requests: write
+  id-token: write
 jobs:
-  # build:
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v6
-  #     - uses: DeterminateSystems/nix-installer-action@main
-  #     - run: nix build .#docker
+  system_test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@v8
+      - name: Build docker image
+        run: |
+          nix build .#docker --out-link result
+      - name: Load Image
+        run: |
+          IMAGE_REF=$(docker load < result | awk '{print $NF}')
+          echo "IMAGE_REF=$IMAGE_REF" >> $GITHUB_ENV
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install Python dependencies
+        working-directory: system_test
+        run: uv sync
+
+      - name: Run Behave tests
+        working-directory: system_test
+        env:
+          TEST_IMAGE: ${{ env.IMAGE_REF }}
+        run: uv run behave
+
+      - name: Publish test results
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        if: always()
+        with:
+          files: system_test/reports/*.xml
+          check_name: System Test
+
+
   clippy_check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - name: Run Clippy
         run: cargo clippy --all-targets --all-features
-  test:
+  unit_test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -28,4 +62,10 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: nextest
-          args: run
+          args: run --profile ci
+      - name: Publish test results
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        if: always()
+        with:
+          files: target/nextest/ci/junit.xml
+          check_name: Unit test
