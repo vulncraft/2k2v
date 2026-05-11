@@ -60,7 +60,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: nextest
-          args: run
+          args: run --profile ci
       - name: Publish test results
         uses: EnricoMi/publish-unit-test-result-action@v2
         if: always()
