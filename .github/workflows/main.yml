@@ -5,6 +5,10 @@ on:
   pull_request:
 env:
   RUSTFLAGS: "-Dwarnings"
+permissions:
+  checks: write
+  contents: read
+  pull-requests: write
 jobs:
   system_test:
     runs-on: ubuntu-latest
