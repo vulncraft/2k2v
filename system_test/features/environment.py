@@ -1,11 +1,14 @@
+import os
 import time
 import docker
 import requests
 
+TEST_IMAGE = os.getenv("TEST_IMAGE", "kvnode:latest")
+
 def before_scenario(context, scenario):
     client = docker.from_env()
     context.container = client.containers.run(
-            image="kvnode:latest",
+            image=TEST_IMAGE,
             detach=True,
             ports={"3000":3000},
             remove=True,
