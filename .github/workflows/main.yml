@@ -65,4 +65,4 @@ jobs:
         uses: EnricoMi/publish-unit-test-result-action@v2
         if: always()
         with:
-          files: target/nextes/ci/junit.xml
+          files: target/nextest/ci/junit.xml
