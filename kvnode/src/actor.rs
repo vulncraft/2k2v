@@ -1,19 +1,23 @@
+use anyhow::Error;
+use rkyv::Archive;
+use rkyv::rancor;
 use serde::Deserialize;
 use serde::Serialize;
 use tokio::sync::mpsc;
 
 use tokio::sync::oneshot;
+use tracing::info;
 
 use crate::storage::KVStore;
 use crate::storage::StorageInterface;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Archive, rkyv::Serialize, Deserialize, Debug, PartialEq)]
 pub struct PutRequest {
     pub key: String,
     pub value: String,
 }
 
-#[derive(Debug)]
+#[derive(Archive, rkyv::Serialize, Deserialize, Debug, PartialEq)]
 pub enum StoreCommand {
     Get { key: String },
     Put { record: PutRequest },
@@ -25,24 +29,33 @@ pub type ActorMessage = (StoreCommand, Option<oneshot::Sender<Option<String>>>);
 // Actor controls access to the internal local store by message passing
 pub async fn node_actor(mut rx: mpsc::Receiver<ActorMessage>) {
     let mut store = KVStore::default();
-    while let Some(cmd) = rx.recv().await {
-        // info!("{}", json!(cmd));
-        match cmd {
-            (StoreCommand::Get { key }, Some(reply)) => {
-                let _ = reply.send(store.get(&key));
+    while let Some(msg) = rx.recv().await {
+        info!(message = "Actor received:", message = ?msg);
+
+        match msg {
+            (StoreCommand::Get { key }, reply) if reply.is_some() => {
+                if let Some(tx) = reply {
+                    let _ = tx.send(store.get(&key));
+                }
             }
-            (
-                StoreCommand::Put {
+            (cmd @ StoreCommand::Put { .. }, None) => {
+                // Log
+                let bytes = rkyv::to_bytes::<rancor::Error>(&cmd).unwrap();
+                println!("{:?}", bytes);
+                if let StoreCommand::Put {
                     record: PutRequest { key, value },
-                },
-                None,
-            ) => {
-                // Log
-                store.put(&key, &value);
+                } = cmd
+                {
+                    store.put(&key, &value);
+                }
             }
-            (StoreCommand::Delete { key }, None) => {
+            (cmd @ StoreCommand::Delete { .. }, None) => {
                 // Log
-                store.delete(&key);
+                let bytes = rkyv::to_bytes::<rancor::Error>(&cmd).unwrap();
+                println!("{:?}", bytes);
+                if let StoreCommand::Delete { key } = cmd {
+                    store.delete(&key);
+                }
             }
             (msg, return_channel) => {
                 panic!("illegal {:?} - {:#?}", msg, return_channel);
