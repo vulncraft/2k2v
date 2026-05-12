@@ -2,7 +2,7 @@ use clap::Parser;
 use tokio::sync::mpsc;
 
 use kvnode::{
-    actor::{StoreCommand, node_actor},
+    actor::{ActorMessage, node_actor},
     node::NodeHttp,
 };
 use tracing::info;
@@ -23,7 +23,7 @@ async fn main() {
     let args = Args::parse();
     info!("init");
 
-    let (tx, rx) = mpsc::channel::<StoreCommand>(32);
+    let (tx, rx) = mpsc::channel::<ActorMessage>(32);
     tokio::spawn(node_actor(rx));
     let node = NodeHttp {
         store_tx: tx,
