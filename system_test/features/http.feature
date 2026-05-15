@@ -1,8 +1,7 @@
 Feature: KVNode HTTP API
-	Background:
-		Given KVNode is running
 
 	Scenario: Get a nonexistent key
+		Given KVNode is running
 		When I get key=unknown
 		Then the response status is 404
 		And the response body is
@@ -11,6 +10,7 @@ Feature: KVNode HTTP API
 		"""
 
 	Scenario: Add and get a key
+		Given KVNode is running
 		When I get key=fish
 		Then the response status is 404
 		When I put fish=fishval
@@ -23,6 +23,7 @@ Feature: KVNode HTTP API
 		"""
 
 	Scenario: Add and delete a key
+		Given KVNode is running
 		When I put fish=fishval
 		When I delete key=fish
 		When I get key=fish

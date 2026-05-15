@@ -19,7 +19,7 @@ use tokio::sync::{mpsc, oneshot};
 use tower_http::trace::TraceLayer;
 use tracing::{info, instrument};
 
-use crate::actor::{self, StoreCommand};
+use crate::actor::{self, ActorMessage, StoreCommand};
 
 #[derive(Error, Debug, Serialize)]
 pub enum NodeError {
@@ -34,7 +34,7 @@ struct StoredValue {
 }
 
 pub struct NodeHttp {
-    pub store_tx: mpsc::Sender<actor::StoreCommand>,
+    pub store_tx: mpsc::Sender<ActorMessage>,
     pub bind_address: String,
 }
 
@@ -58,24 +58,29 @@ impl NodeHttp {
     }
 
     async fn handle_del_val(
-        State(tx): State<mpsc::Sender<StoreCommand>>,
+        State(tx): State<mpsc::Sender<ActorMessage>>,
         Path(key): Path<String>,
     ) -> StatusCode {
         info!(message = "Deleted key", key = &key);
-        let _ = tx.send(StoreCommand::Delete { key }).await;
+        let _ = tx.send((StoreCommand::Delete { key }, None)).await;
         StatusCode::OK
     }
 
     async fn handle_put_val(
-        State(tx): State<mpsc::Sender<StoreCommand>>,
+        State(tx): State<mpsc::Sender<ActorMessage>>,
         Json(body): Json<actor::PutRequest>,
     ) -> (StatusCode) {
         // info!(message = "Updated key", key = &key, new_value = val);
         let _ = tx
-            .send(StoreCommand::Put(actor::PutRequest {
-                key: body.key,
-                value: body.value,
-            }))
+            .send((
+                StoreCommand::Put {
+                    record: actor::PutRequest {
+                        key: body.key,
+                        value: body.value,
+                    },
+                },
+                None,
+            ))
             .await;
 
         (StatusCode::OK)
@@ -83,17 +88,14 @@ impl NodeHttp {
 
     // Get a value from the KV store
     async fn handle_get_val(
-        State(tx): State<mpsc::Sender<StoreCommand>>,
+        State(tx): State<mpsc::Sender<ActorMessage>>,
         Path(key): Path<String>,
     ) -> (StatusCode, Json<StoredValue>) {
         info!(message = "get key", key = key);
 
         let (itx, irx) = oneshot::channel();
         let _ = tx
-            .send(StoreCommand::Get {
-                key: key.clone(),
-                reply: itx,
-            })
+            .send((StoreCommand::Get { key: key.clone() }, Some(itx)))
             .await;
         if let Some(val) = irx.await.unwrap() {
             (
@@ -114,6 +116,8 @@ impl NodeHttp {
 
 #[cfg(test)]
 mod test {
+    use std::path::PathBuf;
+
     use crate::actor::node_actor;
 
     use super::*;
@@ -122,8 +126,9 @@ mod test {
     use serde_json::json;
     #[tokio::test]
     async fn test_ops() {
-        let (tx, rx) = mpsc::channel::<StoreCommand>(32);
-        tokio::spawn(node_actor(rx));
+        let (tx, rx) = mpsc::channel::<ActorMessage>(32);
+        let tmp_wal = PathBuf::from("/dev/null");
+        tokio::spawn(node_actor(rx, tmp_wal));
         let node = NodeHttp {
             store_tx: tx,
             bind_address: "localhost:3000".into(),

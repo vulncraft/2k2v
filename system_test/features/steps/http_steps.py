@@ -2,21 +2,9 @@ import json
 import requests
 from behave import given, when, then
 
-BASE_URL = "http://0.0.0.0:3000"
+from features.steps.common import BASE_URL
 
-@given("KVNode is running")
-def step_kvnode_running(context):
-    response = requests.get(f"{BASE_URL}/key/status")
-    assert response.status_code != 500
 
-@given("KVNode has initial state")
-def step_apply_initial_state(context):
-    headers = {"Content-Type": "application/json"}
-    state = json.loads(context.text)
-    for each in state:
-        k = each["key"]
-        v = each["value"]
-        assert requests.put(f"{BASE_URL}/key", json={"key": k, "value": v}, headers=headers).status_code == 200
 
 
 @when("I get key={key}")

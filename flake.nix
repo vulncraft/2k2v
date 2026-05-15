@@ -31,6 +31,9 @@
         docker-image = pkgs.dockerTools.buildLayeredImage {
           name = "kvnode";
           tag = "latest";
+          extraCommands = ''
+            mkdir -p tmp var/run var/log workspace
+          '';
 
           # fakeNss provides /etc/passwd and /etc/group so getpwuid() doesn't panic
           contents = [ pkgs.dockerTools.fakeNss pkgs.tini ];
