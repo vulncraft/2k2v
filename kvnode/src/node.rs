@@ -116,6 +116,8 @@ impl NodeHttp {
 
 #[cfg(test)]
 mod test {
+    use std::path::PathBuf;
+
     use crate::actor::node_actor;
 
     use super::*;
@@ -125,7 +127,8 @@ mod test {
     #[tokio::test]
     async fn test_ops() {
         let (tx, rx) = mpsc::channel::<ActorMessage>(32);
-        tokio::spawn(node_actor(rx));
+        let tmp_wal = PathBuf::from("/dev/null");
+        tokio::spawn(node_actor(rx, tmp_wal));
         let node = NodeHttp {
             store_tx: tx,
             bind_address: "localhost:3000".into(),

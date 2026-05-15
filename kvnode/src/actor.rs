@@ -1,23 +1,22 @@
-use anyhow::Error;
+use std::path::PathBuf;
+
 use rkyv::Archive;
-use rkyv::rancor;
-use serde::Deserialize;
-use serde::Serialize;
 use tokio::sync::mpsc;
 
 use tokio::sync::oneshot;
 use tracing::info;
 
+use crate::persistence::WalManager;
 use crate::storage::KVStore;
 use crate::storage::StorageInterface;
 
-#[derive(Archive, rkyv::Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Archive, rkyv::Serialize, rkyv::Deserialize, serde::Deserialize, Debug, PartialEq)]
 pub struct PutRequest {
     pub key: String,
     pub value: String,
 }
 
-#[derive(Archive, rkyv::Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Archive, rkyv::Serialize, rkyv::Deserialize, serde::Deserialize, Debug, PartialEq)]
 pub enum StoreCommand {
     Get { key: String },
     Put { record: PutRequest },
@@ -27,8 +26,9 @@ pub enum StoreCommand {
 pub type ActorMessage = (StoreCommand, Option<oneshot::Sender<Option<String>>>);
 
 // Actor controls access to the internal local store by message passing
-pub async fn node_actor(mut rx: mpsc::Receiver<ActorMessage>) {
+pub async fn node_actor(mut rx: mpsc::Receiver<ActorMessage>, wal_path: PathBuf) {
     let mut store = KVStore::default();
+    let wal = WalManager::new(wal_path).await;
     while let Some(msg) = rx.recv().await {
         info!(message = "Actor received:", message = ?msg);
 
@@ -40,8 +40,7 @@ pub async fn node_actor(mut rx: mpsc::Receiver<ActorMessage>) {
             }
             (cmd @ StoreCommand::Put { .. }, None) => {
                 // Log
-                let bytes = rkyv::to_bytes::<rancor::Error>(&cmd).unwrap();
-                println!("{:?}", bytes);
+                wal.write(&cmd).await;
                 if let StoreCommand::Put {
                     record: PutRequest { key, value },
                 } = cmd
@@ -51,8 +50,7 @@ pub async fn node_actor(mut rx: mpsc::Receiver<ActorMessage>) {
             }
             (cmd @ StoreCommand::Delete { .. }, None) => {
                 // Log
-                let bytes = rkyv::to_bytes::<rancor::Error>(&cmd).unwrap();
-                println!("{:?}", bytes);
+                wal.write(&cmd).await;
                 if let StoreCommand::Delete { key } = cmd {
                     store.delete(&key);
                 }
@@ -62,6 +60,8 @@ pub async fn node_actor(mut rx: mpsc::Receiver<ActorMessage>) {
             }
         }
     }
+
+    // wal.replay().await;
 }
 
 #[cfg(test)]
@@ -78,7 +78,8 @@ mod tests {
     #[tokio::test]
     async fn actor_fileops() {
         let (tx, rx) = mpsc::channel::<ActorMessage>(32);
-        tokio::spawn(node_actor(rx));
+        let tmp_wal = PathBuf::from("/dev/null");
+        tokio::spawn(node_actor(rx, tmp_wal));
 
         // Check key not exist
         assert!(get_key(&tx, "key".into()).await.is_none());
