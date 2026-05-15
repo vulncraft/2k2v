@@ -21,3 +21,5 @@ target
 #.idea/
 result
 *.bin
+__pycache__
+*.xml
