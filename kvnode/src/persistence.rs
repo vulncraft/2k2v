@@ -72,7 +72,7 @@ mod tests {
         let wal_path = tmp.path().join("wal.bin");
 
         let wal = WalManager::new(wal_path).await;
-        let mut operations = Vec::new();
+        let mut operations = Vec::with_capacity(10);
         operations.push(StoreCommand::Get { key: "key".into() });
         operations.push(StoreCommand::Put {
             record: crate::actor::PutRequest {
@@ -91,13 +91,13 @@ mod tests {
         operations.push(StoreCommand::Get { key: "key".into() });
 
         for op in &operations {
-            wal.write(&op).await;
+            wal.write(op).await;
         }
         let (tx, mut rx) = tokio::sync::mpsc::channel(32);
         wal.replay(&tx).await;
         let mut actual = Vec::new();
 
-        let cmd = rx.recv_many(&mut actual, 10).await;
+        let _ = rx.recv_many(&mut actual, 10).await;
         // Note GET is not ommited since we are not calling through node_actor
 
         assert_eq!(actual.len(), operations.len());
