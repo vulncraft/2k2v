@@ -43,8 +43,8 @@ jobs:
       - name: Test with latest nextest release
         uses: actions-rs/cargo@v1
         with:
-          command: cargo
-          args: build --release
+          command: build
+          args: --release
       - name: Install uv
         uses: astral-sh/setup-uv@v5
 
