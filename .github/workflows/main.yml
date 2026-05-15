@@ -56,7 +56,7 @@ jobs:
         working-directory: system_test
         env:
           TEST_BINARY: ../target/release/kvnode
-        run: uv run behave
+        run: uv run behave --junit
 
       - name: Publish test results
         uses: EnricoMi/publish-unit-test-result-action@v2
