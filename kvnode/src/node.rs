@@ -65,8 +65,10 @@ impl NodeHttp {
         info!(message = "Deleted key", key = &key);
         let (itx, irx) = oneshot::channel();
         let _ = tx.send((StoreCommand::Delete { key }, itx)).await;
-        irx.await;
-        StatusCode::OK
+        match irx.await {
+            Ok(_) => (StatusCode::OK),
+            _ => (StatusCode::INTERNAL_SERVER_ERROR),
+        }
     }
 
     async fn handle_put_val(
@@ -87,8 +89,10 @@ impl NodeHttp {
             ))
             .await;
 
-        irx.await;
-        (StatusCode::OK)
+        match irx.await {
+            Ok(_) => (StatusCode::OK),
+            _ => (StatusCode::INTERNAL_SERVER_ERROR),
+        }
     }
 
     // Get a value from the KV store
