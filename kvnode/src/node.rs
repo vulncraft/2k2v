@@ -5,6 +5,7 @@ use std::{
     default,
     net::SocketAddr,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 
 use axum::{
@@ -16,7 +17,10 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use tokio::sync::{mpsc, oneshot};
+use tokio::{
+    sync::{mpsc, oneshot},
+    time::timeout,
+};
 use tower_http::trace::TraceLayer;
 use tracing::{info, instrument};
 
@@ -45,6 +49,8 @@ impl NodeHttp {
             .route("/key/{key}", get(NodeHttp::handle_get_val))
             .route("/key", put(NodeHttp::handle_put_val))
             .route("/key/{key}", delete(NodeHttp::handle_del_val))
+            .route("/health", get(NodeHttp::handle_health))
+            .route("/ready", get(NodeHttp::handle_ready))
             .with_state(self.store_tx.clone())
             .layer(TraceLayer::new_for_http())
     }
@@ -56,6 +62,21 @@ impl NodeHttp {
             .await
             .expect("Failed to bind port");
         axum::serve(listener, app).await;
+    }
+
+    async fn handle_health() -> StatusCode {
+        StatusCode::OK
+    }
+
+    // Try getting a key from the KV store
+    // if it works then all is initialized
+    async fn handle_ready(State(tx): State<mpsc::Sender<ActorMessage>>) -> StatusCode {
+        let (itx, irx) = oneshot::channel();
+        let _ = tx.send((StoreCommand::NoOp, itx)).await;
+        match timeout(Duration::from_secs(1), irx).await {
+            Ok(Ok(_)) => StatusCode::OK,
+            _ => StatusCode::SERVICE_UNAVAILABLE,
+        }
     }
 
     async fn handle_del_val(

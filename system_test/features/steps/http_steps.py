@@ -11,6 +11,14 @@ from features.steps.common import BASE_URL
 def step_get_key(context, key):
     context.response = requests.get(f"{BASE_URL}/key/{key}")
 
+@when("I get ready")
+def step_get_ready(context):
+    context.response = requests.get(f"{BASE_URL}/ready")
+
+@when("I get health")
+def step_get_health(context):
+    context.response = requests.get(f"{BASE_URL}/health")
+
 @when("I put {key}={value}")
 def step_get_key(context, key, value):
     

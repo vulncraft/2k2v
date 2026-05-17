@@ -1,4 +1,10 @@
 Feature: KVNode HTTP API
+	Scenario: health endpoints
+		Given KVNode is running
+		When I get health
+		Then the response status is 200
+		When I get ready
+		Then the response status is 200
 
 	Scenario: Get a nonexistent key
 		Given KVNode is running
