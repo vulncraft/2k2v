@@ -3,6 +3,7 @@ use std::{fs::OpenOptions, path::PathBuf, process::exit};
 use clap::Parser;
 
 use kvnode::kvnode::Kvnode;
+use tokio::signal::unix::{SignalKind, signal};
 use tracing::info;
 
 #[derive(Parser)]
@@ -43,7 +44,21 @@ async fn main() {
         .create_new(true)
         .open(PathBuf::from(&args.file))
         .ok();
-    let result = Kvnode::start(kvnode).await;
+
+    let (shut_tx, shut_rx) = kvnode::shutdown::channel();
+
+    // signal handler
+    tokio::spawn(async move {
+        let mut sigterm = signal(SignalKind::terminate()).expect("sigterm");
+        let mut sigint = signal(SignalKind::interrupt()).expect("sigint");
+        tokio::select! {
+            _ = sigterm.recv() => info!("received SIGTERM"),
+            _ = sigint.recv() => info!("received SIGINT"),
+        }
+        shut_tx.trigger();
+    });
+
+    let result = Kvnode::start(kvnode, shut_rx).await;
     if result.is_err() {
         tracing::error!(message = "Error occured", err = ?result);
         exit(1);

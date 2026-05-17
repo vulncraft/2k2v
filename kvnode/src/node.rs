@@ -24,7 +24,10 @@ use tokio::{
 use tower_http::trace::TraceLayer;
 use tracing::{info, instrument};
 
-use crate::actor::{self, ActorMessage, StoreCommand};
+use crate::{
+    actor::{self, ActorMessage, StoreCommand},
+    shutdown::ShutdownListener,
+};
 
 #[derive(Error, Debug, Serialize)]
 pub enum NodeError {
@@ -56,12 +59,15 @@ impl NodeHttp {
     }
 
     // Run the node
-    pub async fn run(self) {
+    pub async fn run(self, shutdown: ShutdownListener) {
         let app = self.router();
         let listener = tokio::net::TcpListener::bind(&self.bind_address)
             .await
             .expect("Failed to bind port");
-        axum::serve(listener, app).await;
+        axum::serve(listener, app)
+            .with_graceful_shutdown(shutdown.wait())
+            .await;
+        info!("HTTP stopped");
     }
 
     async fn handle_health() -> StatusCode {

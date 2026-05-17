@@ -66,8 +66,8 @@ pub async fn node_actor(
             }
         }
     }
-
-    // wal.replay().await;
+    wal.sync().await;
+    info!("wal synced");
 }
 
 #[cfg(test)]

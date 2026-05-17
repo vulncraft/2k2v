@@ -70,6 +70,10 @@ impl WalManager {
         }
         Ok(())
     }
+
+    pub async fn sync(&self) {
+        let _ = self.fd.lock().await.sync_all().await;
+    }
 }
 
 #[cfg(test)]
