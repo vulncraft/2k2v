@@ -1,10 +1,11 @@
 use std::path::PathBuf;
 
+use anyhow::{self, Error};
 use rkyv::rancor;
 use tokio::{
     fs::{File, OpenOptions},
     io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt},
-    sync::{Mutex, mpsc},
+    sync::{Mutex, mpsc, oneshot},
 };
 
 use crate::actor::{ActorMessage, StoreCommand};
@@ -17,7 +18,7 @@ pub struct WalManager {
 }
 
 impl WalManager {
-    pub async fn new(path: PathBuf) -> Self {
+    pub async fn new(path: &PathBuf) -> Self {
         let fd = OpenOptions::new()
             .write(true)
             .append(true)
@@ -27,7 +28,7 @@ impl WalManager {
             .await
             .unwrap();
         WalManager {
-            path,
+            path: path.clone(),
             fd: Mutex::new(fd),
         }
     }
@@ -36,16 +37,21 @@ impl WalManager {
     pub async fn write(&self, cmd: &StoreCommand) {
         let bytes = rkyv::to_bytes::<rancor::Error>(cmd).unwrap();
         let mut guard = self.fd.lock().await;
-        guard.write_u64(bytes.len() as u64).await.unwrap();
+        assert!(
+            bytes.len() < u16::MAX as usize,
+            "Wal message exceeded u16::max"
+        );
+        guard.write_u16(bytes.len() as u16).await.unwrap();
         guard.write_all(&bytes).await.unwrap();
         guard.flush().await.unwrap();
     }
 
-    pub async fn replay(&self, tx: &mpsc::Sender<ActorMessage>) {
+    pub async fn replay(&self, tx: &mpsc::Sender<ActorMessage>) -> Result<(), Error> {
+        // hold the lock for duration of replay
         let mut guard = self.fd.lock().await;
-        guard.seek(std::io::SeekFrom::Start(0)).await.unwrap();
+        guard.seek(std::io::SeekFrom::Start(0)).await?;
         loop {
-            let len = guard.read_u64().await;
+            let len = guard.read_u16().await;
             if len.is_err() {
                 break;
             }
@@ -53,10 +59,16 @@ impl WalManager {
             let mut buf = vec![0u8; len];
             // let mut aligned = rkyv::util::AlignedVec::with_capacity(len);
             // aligned.resize(len, 0);
-            guard.read_exact(&mut buf).await.unwrap();
-            let cmd = rkyv::from_bytes::<StoreCommand, rancor::Error>(&buf).unwrap();
-            tx.send((cmd, None)).await.unwrap();
+            guard.read_exact(&mut buf).await?;
+            if let Ok(cmd) = rkyv::from_bytes::<StoreCommand, rancor::Error>(&buf) {
+                let (itx, irx) = oneshot::channel();
+                tx.send((cmd, itx)).await?;
+                let _ = irx.await;
+            } else {
+                return Err(anyhow::anyhow!("Invalid record format in WAL"));
+            }
         }
+        Ok(())
     }
 }
 
@@ -71,7 +83,7 @@ mod tests {
         let tmp = TempDir::new("kvnodepersistence").unwrap();
         let wal_path = tmp.path().join("wal.bin");
 
-        let wal = WalManager::new(wal_path).await;
+        let wal = WalManager::new(&wal_path).await;
         let mut operations = Vec::with_capacity(10);
         operations.push(StoreCommand::Get { key: "key".into() });
         operations.push(StoreCommand::Put {
@@ -94,15 +106,23 @@ mod tests {
             wal.write(op).await;
         }
         let (tx, mut rx) = tokio::sync::mpsc::channel(32);
-        wal.replay(&tx).await;
-        let mut actual = Vec::new();
 
-        let _ = rx.recv_many(&mut actual, 10).await;
+        // replay() forwards each command and then blocks on its oneshot reply,
+        // so it must run concurrently with a consumer of `rx` that answers it.
+        let replay = tokio::spawn(async move { wal.replay(&tx).await });
+
+        let mut actual = Vec::new();
+        while actual.len() < operations.len() {
+            let (cmd, reply) = rx.recv().await.unwrap();
+            let _ = reply.send(None);
+            actual.push(cmd);
+        }
+        let _ = replay.await.unwrap();
         // Note GET is not ommited since we are not calling through node_actor
 
         assert_eq!(actual.len(), operations.len());
         for (r_actual, r_expected) in actual.iter().zip(operations) {
-            assert_eq!(r_actual.0, r_expected);
+            assert_eq!(*r_actual, r_expected);
         }
 
         tmp.close().unwrap();

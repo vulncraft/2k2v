@@ -3,6 +3,7 @@
 use std::{
     collections::HashMap,
     default,
+    net::SocketAddr,
     sync::{Arc, Mutex},
 };
 
@@ -35,7 +36,7 @@ struct StoredValue {
 
 pub struct NodeHttp {
     pub store_tx: mpsc::Sender<ActorMessage>,
-    pub bind_address: String,
+    pub bind_address: SocketAddr,
 }
 
 impl NodeHttp {
@@ -49,7 +50,7 @@ impl NodeHttp {
     }
 
     // Run the node
-    pub async fn run(&self) {
+    pub async fn run(self) {
         let app = self.router();
         let listener = tokio::net::TcpListener::bind(&self.bind_address)
             .await
@@ -62,7 +63,9 @@ impl NodeHttp {
         Path(key): Path<String>,
     ) -> StatusCode {
         info!(message = "Deleted key", key = &key);
-        let _ = tx.send((StoreCommand::Delete { key }, None)).await;
+        let (itx, irx) = oneshot::channel();
+        let _ = tx.send((StoreCommand::Delete { key }, itx)).await;
+        irx.await;
         StatusCode::OK
     }
 
@@ -71,6 +74,7 @@ impl NodeHttp {
         Json(body): Json<actor::PutRequest>,
     ) -> (StatusCode) {
         // info!(message = "Updated key", key = &key, new_value = val);
+        let (itx, irx) = oneshot::channel();
         let _ = tx
             .send((
                 StoreCommand::Put {
@@ -79,10 +83,11 @@ impl NodeHttp {
                         value: body.value,
                     },
                 },
-                None,
+                itx,
             ))
             .await;
 
+        irx.await;
         (StatusCode::OK)
     }
 
@@ -94,9 +99,7 @@ impl NodeHttp {
         info!(message = "get key", key = key);
 
         let (itx, irx) = oneshot::channel();
-        let _ = tx
-            .send((StoreCommand::Get { key: key.clone() }, Some(itx)))
-            .await;
+        let _ = tx.send((StoreCommand::Get { key: key.clone() }, itx)).await;
         if let Some(val) = irx.await.unwrap() {
             (
                 StatusCode::OK,
@@ -116,7 +119,7 @@ impl NodeHttp {
 
 #[cfg(test)]
 mod test {
-    use std::path::PathBuf;
+    use std::{net::Ipv4Addr, path::PathBuf};
 
     use crate::actor::node_actor;
 
@@ -128,10 +131,12 @@ mod test {
     async fn test_ops() {
         let (tx, rx) = mpsc::channel::<ActorMessage>(32);
         let tmp_wal = PathBuf::from("/dev/null");
-        tokio::spawn(node_actor(rx, tmp_wal));
+        let (rtx, rrx) = oneshot::channel();
+        tokio::spawn(node_actor(rx, tmp_wal, rtx));
+        rrx.await.unwrap();
         let node = NodeHttp {
             store_tx: tx,
-            bind_address: "localhost:3000".into(),
+            bind_address: "0.0.0.0:3000".parse().unwrap(),
         };
         let router = node.router();
         let server = TestServer::new(router);
