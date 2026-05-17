@@ -11,6 +11,7 @@ use crate::{
     actor::{ActorMessage, node_actor},
     node::NodeHttp,
     persistence::WalManager,
+    shutdown,
 };
 
 #[derive(Error, Debug)]
@@ -27,14 +28,14 @@ pub struct Kvnode {
     pub wal_path: PathBuf,
 }
 impl Kvnode {
-    pub async fn start(node: Kvnode) -> anyhow::Result<()> {
+    pub async fn start(node: Kvnode, shutdown: shutdown::ShutdownListener) -> anyhow::Result<()> {
         let (storage_actor, tx) = Kvnode::start_and_replay_storage_actor(&node.wal_path).await?;
 
         let http = NodeHttp {
             store_tx: tx,
             bind_address: node.http_addr,
         };
-        let http_layer = tokio::spawn(http.run());
+        let http_layer = tokio::spawn(http.run(shutdown));
         let _ = tokio::try_join!(http_layer, storage_actor);
         Ok(())
     }
