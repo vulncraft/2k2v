@@ -1,7 +1,10 @@
 use std::{io, net::SocketAddr, path::PathBuf};
 
 use thiserror::Error;
-use tokio::{sync::mpsc, task::JoinHandle};
+use tokio::{
+    sync::{mpsc, oneshot},
+    task::JoinHandle,
+};
 use tracing::warn;
 
 use crate::{
@@ -46,8 +49,9 @@ impl Kvnode {
         // mv wal.bin wal.bin.bak
         std::fs::copy(wal_path, &backup_path).map_err(|e| RunTimeError::IoError(e.kind()))?;
         std::fs::remove_file(wal_path).map_err(|e| RunTimeError::IoError(e.kind()))?;
-
-        let storage_actor = tokio::spawn(node_actor(rx, original_path));
+        let (rtx, rrx) = oneshot::channel();
+        let storage_actor = tokio::spawn(node_actor(rx, original_path, rtx));
+        rrx.await.expect("Fatal error in actor");
 
         let recovery_wal = WalManager::new(&backup_path).await;
         let replay_result = recovery_wal.replay(&tx).await;

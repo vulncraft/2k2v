@@ -131,7 +131,9 @@ mod test {
     async fn test_ops() {
         let (tx, rx) = mpsc::channel::<ActorMessage>(32);
         let tmp_wal = PathBuf::from("/dev/null");
-        tokio::spawn(node_actor(rx, tmp_wal));
+        let (rtx, rrx) = oneshot::channel();
+        tokio::spawn(node_actor(rx, tmp_wal, rtx));
+        rrx.await.unwrap();
         let node = NodeHttp {
             store_tx: tx,
             bind_address: "0.0.0.0:3000".parse().unwrap(),

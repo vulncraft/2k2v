@@ -26,9 +26,14 @@ pub enum StoreCommand {
 pub type ActorMessage = (StoreCommand, oneshot::Sender<Option<String>>);
 
 // Actor controls access to the internal local store by message passing
-pub async fn node_actor(mut rx: mpsc::Receiver<ActorMessage>, wal_path: PathBuf) {
+pub async fn node_actor(
+    mut rx: mpsc::Receiver<ActorMessage>,
+    wal_path: PathBuf,
+    ready: oneshot::Sender<()>,
+) {
     let mut store = KVStore::default();
     let wal = WalManager::new(&wal_path).await;
+    let _ = ready.send(());
     while let Some(msg) = rx.recv().await {
         info!(message = "Actor received:", message = ?msg);
 
@@ -77,7 +82,9 @@ mod tests {
         let (tx, rx) = mpsc::channel::<ActorMessage>(32);
         let tmp_wal = PathBuf::from("/dev/null");
         let (itx, irx) = oneshot::channel();
-        tokio::spawn(node_actor(rx, tmp_wal));
+        let (rtx, rrx) = oneshot::channel();
+        tokio::spawn(node_actor(rx, tmp_wal, rtx));
+        let _ = rrx.await;
 
         // Check key not exist
         assert!(get_key(&tx, "key".into()).await.is_none());
