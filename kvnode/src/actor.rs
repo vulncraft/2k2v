@@ -21,6 +21,7 @@ pub enum StoreCommand {
     Get { key: String },
     Put { record: PutRequest },
     Delete { key: String },
+    NoOp,
 }
 
 pub type ActorMessage = (StoreCommand, oneshot::Sender<Option<String>>);
@@ -49,7 +50,7 @@ pub async fn node_actor(
                 } = cmd
                 {
                     store.put(&key, &value);
-                    reply.send(None).unwrap();
+                    let _ = reply.send(None);
                 }
             }
             (cmd @ StoreCommand::Delete { .. }, reply) => {
@@ -57,8 +58,11 @@ pub async fn node_actor(
                 wal.write(&cmd).await;
                 if let StoreCommand::Delete { key } = cmd {
                     store.delete(&key);
-                    reply.send(None).unwrap();
+                    let _ = reply.send(None);
                 }
+            }
+            (StoreCommand::NoOp, reply) => {
+                let _ = reply.send(None);
             }
         }
     }

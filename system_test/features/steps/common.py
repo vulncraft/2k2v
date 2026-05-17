@@ -12,11 +12,12 @@ import requests
 
 TEST_BINARY = pathlib.Path(os.getenv("TEST_BINARY", "ERROR_TEST_BINARY_NOT_SET")).absolute()
 BASE_URL = "http://0.0.0.0:3000"
+READY_URL = "http://0.0.0.0:3000/ready"
 
 @given("KVNode is running")
 def spawn_clean_node(context):
     spawn_node(context)
-    _wait_for_ready(context, BASE_URL)
+    _wait_for_ready(context, READY_URL)
 
 @when("KVNode is started")
 def start_kvnode_no_check(context):
