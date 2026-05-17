@@ -117,7 +117,7 @@ mod tests {
             let _ = reply.send(None);
             actual.push(cmd);
         }
-        replay.await.unwrap();
+        let _ = replay.await.unwrap();
         // Note GET is not ommited since we are not calling through node_actor
 
         assert_eq!(actual.len(), operations.len());
