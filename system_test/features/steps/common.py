@@ -16,6 +16,25 @@ BASE_URL = "http://0.0.0.0:3000"
 @given("KVNode is running")
 def spawn_clean_node(context):
     spawn_node(context)
+    _wait_for_ready(context, BASE_URL)
+
+@when("KVNode is started")
+def start_kvnode_no_check(context):
+    spawn_node(context)
+
+@then("the node is not running")
+def check_pid_status_not_running(context):
+    time.sleep(2)
+    assert context.pid.poll() is not None
+
+@then("the wal has not changed")
+def check_wal_not_changed(context):
+    with open(context.wal_path, "rb") as f:
+
+        data = f.read()
+        assert data == context.wal_init_value, f"received: {data}  expected: {context.wal_init_value}"
+
+
 
 @given("KVNode has initial state")
 def step_apply_initial_state(context):
@@ -38,10 +57,24 @@ def restart_node(context):
         assert False
     spawn_clean_node(context)
 
+@given("an existing empty wal")
+def init_empty_wal(context):
+    wal_path = f"{context.tmp_dir}/wal.bin"
+    open(wal_path, "a").close()
+    context.wal_path = wal_path
+    context.wal_init_value = b''
+
+@given("an existing invalid wal")
+def init_invalid_wal(context):
+    wal_path = f"{context.tmp_dir}/wal.bin"
+    
+    with open(wal_path, "ab") as f:
+        f.write(b'A' * 1024)
+    context.wal_init_value = b'A' * 1024
+    context.wal_path = wal_path
 
 def spawn_node(context):
     context.pid = subprocess.Popen(shlex.split(f"{TEST_BINARY} --file wal.bin --address 0.0.0.0"), cwd=context.tmp_dir)
-    _wait_for_ready(context, BASE_URL)
 
 def _wait_for_ready(context, url, timeout=10):
     deadline = time.time() + timeout
